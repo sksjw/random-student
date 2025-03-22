@@ -5,8 +5,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Upload, Shuffle, UserPlus2, Users, X, Settings, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Toaster } from "@/components/ui/toaster";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import gsap from 'gsap';
 
 function App() {
@@ -15,8 +17,11 @@ function App() {
   const [isSpinning, setIsSpinning] = useState(false);
   const [multipleCount, setMultipleCount] = useState<number>(1);
   const [currentFileName, setCurrentFileName] = useState<string>("");
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showAnimation, setShowAnimation] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedNamesRef = useRef<HTMLDivElement>(null);
+  const spinningNamesRef = useRef<{ [key: number]: HTMLDivElement | null }>({});
   const { toast } = useToast();
 
   useEffect(() => {
@@ -47,7 +52,7 @@ function App() {
     if (file.type !== 'text/plain') {
       toast({
         title: "错误",
-        description: "请上传TXT格式名单，一行一个",
+        description: "请添加TXT格式名单，一行一个",
         variant: "destructive"
       });
       return;
@@ -113,19 +118,55 @@ function App() {
     }
 
     setIsSpinning(true);
+
+    if (!showAnimation) {
+      // If animation is disabled, just show the final result
+      const shuffled = [...names].sort(() => Math.random() - 0.5);
+      const selected = shuffled.slice(0, multipleCount);
+      setSelectedNames(selected);
+      setIsSpinning(false);
+      return;
+    }
+
+    // Initialize with random names
+    const initialSelection = Array(multipleCount).fill('').map(() => 
+      names[Math.floor(Math.random() * names.length)]
+    );
+    setSelectedNames(initialSelection);
+
     let count = 0;
     const duration = 2000; // 2 seconds
     const interval = 50; // Update every 50ms
     const totalSteps = duration / interval;
     
     const timer = setInterval(() => {
-      const shuffled = [...names].sort(() => Math.random() - 0.5);
-      const selected = shuffled.slice(0, multipleCount);
-      setSelectedNames(selected);
+      // Generate new random names for each position
+      const newSelected = Array(multipleCount).fill('').map(() => 
+        names[Math.floor(Math.random() * names.length)]
+      );
+      setSelectedNames(newSelected);
+
+      // Animate each name independently
+      Object.values(spinningNamesRef.current).forEach((element) => {
+        if (element) {
+          gsap.to(element, {
+            scale: 1.1,
+            duration: 0.1,
+            yoyo: true,
+            ease: "power1.inOut",
+            repeat: 1
+          });
+        }
+      });
+
       count++;
       
       if (count >= totalSteps) {
         clearInterval(timer);
+        // Final selection
+        const shuffled = [...names].sort(() => Math.random() - 0.5);
+        const selected = shuffled.slice(0, multipleCount);
+        setSelectedNames(selected);
         setIsSpinning(false);
       }
     }, interval);
@@ -140,6 +181,7 @@ function App() {
         setNames([]);
         setSelectedNames([]);
         setCurrentFileName("");
+        setShowClearConfirm(false);
         if (fileInputRef.current) {
           fileInputRef.current.value = "";
         }
@@ -197,19 +239,32 @@ function App() {
                   </DialogTrigger>
                   <DialogContent className="bg-neutral-900 border-neutral-800">
                     <DialogHeader>
-                      <DialogTitle className="text-white">选择人数设置</DialogTitle>
+                      <DialogTitle className="text-white">设置</DialogTitle>
                     </DialogHeader>
-                    <div className="py-6">
-                      <Slider
-                        value={[multipleCount]}
-                        onValueChange={(value) => setMultipleCount(value[0])}
-                        max={20}
-                        min={1}
-                        step={1}
-                        className="w-full"
-                      />
-                      <div className="text-center mt-4 text-white">
-                        当前选择: {multipleCount} 人
+                    <div className="space-y-6 py-4">
+                      <div className="space-y-4">
+                        <h4 className="text-sm font-medium text-white">选择人数</h4>
+                        <Slider
+                          value={[multipleCount]}
+                          onValueChange={(value) => setMultipleCount(value[0])}
+                          max={20}
+                          min={1}
+                          step={1}
+                          className="w-full"
+                        />
+                        <div className="text-center text-white">
+                          当前选择: {multipleCount} 人
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="show-animation" className="text-white">
+                          显示随机动画
+                        </Label>
+                        <Switch
+                          id="show-animation"
+                          checked={showAnimation}
+                          onCheckedChange={setShowAnimation}
+                        />
                       </div>
                     </div>
                   </DialogContent>
@@ -245,8 +300,9 @@ function App() {
                   {selectedNames.map((name, index) => (
                     <div
                       key={index}
+                      ref={el => spinningNamesRef.current[index] = el}
                       className={`text-4xl font-light text-white tracking-wider transition-all duration-200
-                        ${isSpinning ? 'scale-110 blur-sm' : 'scale-100 blur-0'}`}
+                        ${isSpinning ? 'blur-sm' : 'blur-0'}`}
                     >
                       {name}
                     </div>
@@ -264,14 +320,45 @@ function App() {
                       已导入名单 ({names.length})
                     </span>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-neutral-500 hover:text-white"
-                    onClick={clearList}
-                  >
-                    <Trash2 size={18} />
-                  </Button>
+                  <Dialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
+                    <DialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-neutral-500 hover:text-white"
+                      >
+                        <Trash2 size={18} />
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="bg-neutral-900 border-neutral-800">
+                      <DialogHeader>
+                        <DialogTitle className="text-white">确认清除</DialogTitle>
+                        <DialogDescription className="text-neutral-400">
+                          确定要清除当前名单吗？此操作无法撤销。
+                        </DialogDescription>
+                      </DialogHeader>
+                      <DialogFooter className="sm:justify-start">
+                        <div className="flex gap-2 w-full">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="flex-1 text-white hover:bg-neutral-800"
+                            onClick={() => setShowClearConfirm(false)}
+                          >
+                            取消
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            className="flex-1"
+                            onClick={clearList}
+                          >
+                            确认清除
+                          </Button>
+                        </div>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                 </div>
                 <ScrollArea className="h-[200px] rounded-md border border-neutral-800 bg-neutral-900/30">
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 p-4">
